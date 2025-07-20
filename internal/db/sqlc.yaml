@@ -1,0 +1,11 @@
+version: "2"
+cloud:
+  project: "trip-plan"
+sql:
+- schema: "migrations"
+  queries: "queries"
+  engine: "postgresql"
+  gen:
+    go: 
+      package: "db"
+      out: "postgresql"
