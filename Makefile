@@ -5,13 +5,11 @@ all: build test
 
 build:
 	@echo "Building..."
-	
-	
-	@go build -o main cmd/api/main.go
+	@go build -o main cmd/main.go
 
 # Run the application
 run:
-	@go run cmd/api/main.go
+	@go run cmd/main.go
 # Create DB container
 docker-run:
 	docker compose up -d --build --remove-orphans
@@ -63,8 +61,7 @@ migrate-up:
 	@goose up sql
 
 migrate-down:
-	@goose up sql
-
+	@goose down sql
 # Run migrations
 #migrate-up:
 #	@set -a && source .env && set +a && goose -dir ./internal/infrastructure/persistence/sql postgres "user=$${DB_USERNAME} password=$${DB_PASSWORD} host=localhost port=$${DB_PORT} dbname=$${DB_DATABASE} sslmode=disable" up

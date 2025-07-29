@@ -29,19 +29,34 @@ services:
       POSTGRES_USER: ${DB_USERNAME}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
-      - "${DB_PORT}:5432"
+      - "${DB_PORT_EXT}:5432"
     volumes:
       - trip-location-service-psql_volume:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "sh -c 'pg_isready -U ${USERNAME} -d ${DATABASE}'"]
+      test: [ "CMD-SHELL", "sh -c 'pg_isready -U ${DB_USERNAME} -d ${DB_DATABASE}'" ]
       interval: 5s
       timeout: 5s
       retries: 3
       start_period: 15s
     networks:
       - trip-service-network
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    volumes:
+      - trip-location-pgadmin-data:/var/lib/pgadmin
+    depends_on:
+      - trip-location-service-psql
+    networks:
+      - trip-service-network
 
 volumes:
   trip-location-service-psql_volume:
+  trip-location-pgadmin-data:
 networks:
   trip-service-network:
