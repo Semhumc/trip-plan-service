@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"trip-plan-service/internal/client"
 	"trip-plan-service/internal/handler"
 	"trip-plan-service/internal/routes"
 
@@ -17,6 +18,8 @@ var(
     dbname = os.Getenv("DB_DATABASE")
     host = os.Getenv("DB_HOST")
     port = os.Getenv("DB_PORT")
+	aiServiceAddr  = os.Getenv("AI_SERVICE_ADDR") // e.g., "localhost:50051"
+	tripServicePort = os.Getenv("TRIP_SERVICE_PORT")
 )
 
 func main() {
@@ -31,7 +34,13 @@ func main() {
 	}
 	defer db.Close()
 
-	tripHandler := handler.NewTripHandler(db)
+	aiClient, err := client.NewAIClient(aiServiceAddr)
+	if err != nil {
+		log.Fatalf("Failed to create AI client: %v", err)
+	}
+	defer aiClient.Close()
+
+	tripHandler := handler.NewTripHandler(db,aiClient)
 
 	routes.TripRoutes(app, tripHandler)
 
