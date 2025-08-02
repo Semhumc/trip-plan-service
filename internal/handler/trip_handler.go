@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"strconv"
-	"time"
+	
 
 	"trip-plan-service/internal/client"
 	"trip-plan-service/internal/models"
@@ -35,7 +35,7 @@ type TripHandlerInterface interface {
 	
 }
 
-// aı dan alıyorum
+
 func (h *TripHandler) NewCreateTripHandler(c *fiber.Ctx) error {
 	var trip models.Trip
 
@@ -50,8 +50,8 @@ func (h *TripHandler) NewCreateTripHandler(c *fiber.Ctx) error {
 		trip.Description,
 		trip.StartPosition,
 		trip.EndPosition,
-		trip.StartDate.Format(time.RFC3339),
-		trip.EndDate.Format(time.RFC3339),
+		trip.StartDate,
+		trip.EndDate,
 	)
 
 	// Call AI service via gRPC

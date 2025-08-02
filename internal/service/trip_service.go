@@ -41,8 +41,14 @@ func (s *TripService) SaveTripWLocations(ctx context.Context) error {
 			String: s.TripSer.Description,
 			Valid:  s.TripSer.Description != "",
 		},
-		StartDate: s.TripSer.StartDate,
-		EndDate:   s.TripSer.EndDate,
+		StartDate: func() time.Time {
+			t, _ := time.Parse("2006-01-02", s.TripSer.StartDate)
+			return t
+		}(),
+		EndDate: func() time.Time {
+			t, _ := time.Parse("2006-01-02", s.TripSer.EndDate)
+			return t
+		}(),
 	})
 
 	if err != nil {
@@ -158,8 +164,8 @@ func (s *TripService) GetUserTrips(ctx context.Context, userID string) ([]models
 					}
 					return ""
 				}(),
-				StartDate: trip.StartDate,
-				EndDate:   trip.EndDate,
+				StartDate: trip.StartDate.String(),
+				EndDate:   trip.EndDate.String(),
 				CreatedAt: func() time.Time {
 					if trip.CreatedAt.Valid {
 						return trip.CreatedAt.Time
@@ -254,8 +260,8 @@ func (s *TripService) GetTripByID(ctx context.Context, tripID int32) (*models.Tr
 				}
 				return ""
 			}(),
-			StartDate: trip.StartDate,
-			EndDate:   trip.EndDate,
+			StartDate: trip.StartDate.String(),
+			EndDate:   trip.EndDate.String(),
 			CreatedAt: func() time.Time {
 				if trip.CreatedAt.Valid {
 					return trip.CreatedAt.Time
