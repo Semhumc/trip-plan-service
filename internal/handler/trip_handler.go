@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"database/sql"
+	"strconv"
 	"time"
 
 	"trip-plan-service/internal/client"
@@ -28,6 +29,10 @@ func NewTripHandler(db *sql.DB, aiClient *client.AIClient) *TripHandler {
 type TripHandlerInterface interface {
 	NewCreateTripHandler(c *fiber.Ctx) error
 	SaveTripHandler(c *fiber.Ctx) error
+	GetUserTripsHandler(c *fiber.Ctx) error
+	DeleteTripHandler(c *fiber.Ctx) error
+	GetTripByIDHandler(c *fiber.Ctx) error
+	
 }
 
 // aı dan alıyorum
@@ -110,4 +115,57 @@ func convertGRPCResponseToModel(grpcResp *proto.TripPlanResponse) map[string]int
 		},
 		"daily_plan": locations,
 	}
+}
+
+
+// YENİ: Kullanıcının tüm triplerini getir
+func (h *TripHandler) GetUserTripsHandler(c *fiber.Ctx) error {
+	// Query parametresinden veya header'dan user_id'yi al
+	userID := c.Query("user_id")
+	if userID == "" {
+		// Alternatif olarak session'dan veya JWT'den user_id alınabilir
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user_id is required"})
+	}
+
+	tripService := service.NewTripService(nil, h.DB, nil)
+	trips, err := tripService.GetUserTrips(context.Background(), userID)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to get trips"})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{"trips": trips})
+}
+
+// YENİ: Trip sil
+func (h *TripHandler) DeleteTripHandler(c *fiber.Ctx) error {
+	tripIDStr := c.Params("id")
+	tripID, err := strconv.Atoi(tripIDStr)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid trip id"})
+	}
+
+	tripService := service.NewTripService(nil, h.DB, nil)
+	err = tripService.DeleteTrip(context.Background(), int32(tripID))
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to delete trip"})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{"status": "trip deleted successfully"})
+}
+
+// YENİ: ID'ye göre trip getir
+func (h *TripHandler) GetTripByIDHandler(c *fiber.Ctx) error {
+	tripIDStr := c.Params("id")
+	tripID, err := strconv.Atoi(tripIDStr)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid trip id"})
+	}
+
+	tripService := service.NewTripService(nil, h.DB, nil)
+	trip, err := tripService.GetTripByID(context.Background(), int32(tripID))
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to get trip"})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(trip)
 }

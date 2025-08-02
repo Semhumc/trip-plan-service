@@ -9,6 +9,8 @@ import (
 	"trip-plan-service/internal/handler"
 	"trip-plan-service/internal/routes"
 
+	_ "github.com/lib/pq"
+
 	"github.com/gofiber/fiber/v2"
 )
 
