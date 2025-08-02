@@ -21,8 +21,10 @@ var (
 	dbname          = os.Getenv("DB_DATABASE")
 	host            = os.Getenv("DB_HOST")
 	port            = os.Getenv("DB_PORT")
-	aiServiceAddr   = os.Getenv("AI_SERVICE_ADDR") // e.g., "localhost:50051"
+	//aiServiceAddr   = os.Getenv("AI_SERVICE_ADDR") // e.g., "localhost:50051"
 	tripServicePort = os.Getenv("TRIP_SERVICE_PORT")
+
+	aiServiceAddr = "localhost:50051"
 )
 
 func main() {
