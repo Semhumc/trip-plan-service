@@ -1,16 +1,10 @@
-// internal/handler/trip_handler.go - Text parsing eklenmiş versiyon
-
 package handler
 
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"log"
-	"regexp"
 	"strconv"
-	"strings"
-	"time"
 
 	"trip-plan-service/internal/client"
 	"trip-plan-service/internal/models"
@@ -40,24 +34,17 @@ type TripHandlerInterface interface {
 	GetTripByIDHandler(c *fiber.Ctx) error
 }
 
-// Günlük plan parse etmek için struct
-type ParsedDayPlan struct {
-	Day      int    `json:"day"`
-	Date     string `json:"date"`
-	Location string `json:"location"`
-	Details  string `json:"details"`
-	Notes    string `json:"notes"`
-}
-
 func (h *TripHandler) NewCreateTripHandler(c *fiber.Ctx) error {
 	var trip models.Trip
 
 	if err := c.BodyParser(&trip); err != nil {
+		log.Printf("❌ Body parse hatası: %v", err)
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
 
 	log.Printf("📨 Received trip data: %+v", trip)
 
+	// gRPC request oluştur
 	grpcReq := client.CreatePromptRequest(
 		trip.UserID,
 		trip.Name,
@@ -68,197 +55,31 @@ func (h *TripHandler) NewCreateTripHandler(c *fiber.Ctx) error {
 		trip.EndDate,
 	)
 
+	log.Printf("📤 gRPC request gönderiliyor: %+v", grpcReq)
+
+	// AI servisini çağır
 	response, err := h.AIClient.GenerateTripPlan(context.Background(), grpcReq)
 	if err != nil {
 		log.Printf("❌ gRPC Error: %v", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "failed to generate trip plan", 
+			"error":   "failed to generate trip plan",
 			"details": err.Error(),
 		})
 	}
 
-	log.Printf("📥 AI Response daily plans count: %d", len(response.DailyPlan))
+	log.Printf("📥 gRPC Response alındı - Daily plans count: %d", len(response.DailyPlan))
 
-	// Eğer DailyPlan boşsa, route_summary'den parse et
-	if len(response.DailyPlan) == 0 && response.Trip != nil && response.Trip.RouteSummary != "" {
-		log.Printf("🔍 DailyPlan is empty, parsing from route_summary...")
-		parsedPlans := parseRouteSummary(response.Trip.RouteSummary, trip.StartDate)
-		
-		if len(parsedPlans) > 0 {
-			log.Printf("✅ Successfully parsed %d days from route_summary", len(parsedPlans))
-			
-			// Parse edilmiş planları gRPC response formatına çevir
-			for _, plan := range parsedPlans {
-				dailyPlan := &proto.DailyPlan{
-					Day:  int32(plan.Day),
-					Date: plan.Date,
-					Location: &proto.Location{
-						Name:      plan.Location,
-						Address:   extractLocationHint(plan.Details),
-						Notes:     plan.Details,
-						SiteUrl:   "",
-						Latitude:  0.0, // Koordinatlar için ayrı bir servise ihtiyaç var
-						Longitude: 0.0,
-					},
-				}
-				response.DailyPlan = append(response.DailyPlan, dailyPlan)
-			}
-		}
-	}
-
+	// gRPC response'u frontend için uygun formata çevir
 	tripResponse := convertGRPCResponseToModel(response)
+	
+	log.Printf("✅ Response hazırlandı: %+v", tripResponse)
 	return c.Status(fiber.StatusOK).JSON(tripResponse)
 }
 
-// Route summary'den günlük planları parse etme fonksiyonu
-func parseRouteSummary(routeSummary string, startDate string) []ParsedDayPlan {
-	var plans []ParsedDayPlan
-	
-	// Günlük plan pattern'i - örnek: "**1. Gün (2025-08-13): İstanbul - Ayvalık**"
-	dayPattern := regexp.MustCompile(`\*\*(\d+)\.\s*Gün\s*\(([^)]+)\):\s*([^*]+)\*\*`)
-	
-	// Parse start date
-	startTime, err := time.Parse("2006-01-02", startDate)
-	if err != nil {
-		log.Printf("❌ Failed to parse start date: %v", err)
-		return plans
-	}
-	
-	lines := strings.Split(routeSummary, "\n")
-	
-	currentDay := 0
-	currentDetails := ""
-	
-	for i, line := range lines {
-		line = strings.TrimSpace(line)
-		
-		// Gün başlığını bul
-		matches := dayPattern.FindStringSubmatch(line)
-		if len(matches) >= 4 {
-			// Önceki günün detaylarını kaydet
-			if currentDay > 0 {
-				dayDate := startTime.AddDate(0, 0, currentDay-1).Format("2006-01-02")
-				plans = append(plans, ParsedDayPlan{
-					Day:      currentDay,
-					Date:     dayDate,
-					Location: extractMainLocation(matches[3]),
-					Details:  strings.TrimSpace(currentDetails),
-					Notes:    strings.TrimSpace(currentDetails),
-				})
-			}
-			
-			// Yeni gün başlat
-			dayNum, _ := strconv.Atoi(matches[1])
-			currentDay = dayNum
-			currentDetails = ""
-			
-			log.Printf("📅 Found day %d: %s", dayNum, matches[3])
-		} else if currentDay > 0 && line != "" && !strings.HasPrefix(line, "**") {
-			// Mevcut günün detaylarını topla
-			if !strings.HasPrefix(line, "*   **") { // Alt başlıkları atla
-				currentDetails += line + "\n"
-			}
-		}
-		
-		// Son gün için özel kontrol
-		if i == len(lines)-1 && currentDay > 0 {
-			dayDate := startTime.AddDate(0, 0, currentDay-1).Format("2006-01-02")
-			plans = append(plans, ParsedDayPlan{
-				Day:      currentDay,
-				Date:     dayDate,
-				Location: extractMainLocationFromDetails(currentDetails),
-				Details:  strings.TrimSpace(currentDetails),
-				Notes:    strings.TrimSpace(currentDetails),
-			})
-		}
-	}
-	
-	// Manuel parse - backup method
-	if len(plans) == 0 {
-		plans = manualParseRouteSummary(routeSummary, startTime)
-	}
-	
-	return plans
-}
-
-// Ana lokasyonu çıkarma
-func extractMainLocation(text string) string {
-	// "İstanbul - Ayvalık" formatından "Ayvalık" çıkar
-	parts := strings.Split(text, " - ")
-	if len(parts) >= 2 {
-		return strings.TrimSpace(parts[len(parts)-1])
-	}
-	return strings.TrimSpace(text)
-}
-
-// Detaylardan ana lokasyonu çıkarma
-func extractMainLocationFromDetails(details string) string {
-	if strings.Contains(details, "Ayvalık") {
-		return "Ayvalık"
-	} else if strings.Contains(details, "Foça") {
-		return "Foça"
-	} else if strings.Contains(details, "Kuşadası") {
-		return "Kuşadası"
-	} else if strings.Contains(details, "Akyaka") || strings.Contains(details, "Gökova") {
-		return "Akyaka (Gökova)"
-	} else if strings.Contains(details, "Muğla") {
-		return "Muğla"
-	}
-	return "Konum belirtilmemiş"
-}
-
-// Address hint çıkarma
-func extractLocationHint(details string) string {
-	if strings.Contains(details, "Ayvalık") {
-		return "Ayvalık, Balıkesir"
-	} else if strings.Contains(details, "Foça") {
-		return "Eski Foça, İzmir"
-	} else if strings.Contains(details, "Kuşadası") {
-		return "Kuşadası, Aydın"
-	} else if strings.Contains(details, "Akyaka") {
-		return "Akyaka, Muğla"
-	} else if strings.Contains(details, "Muğla") {
-		return "Muğla Merkez"
-	}
-	return ""
-}
-
-// Manuel parse - backup method
-func manualParseRouteSummary(routeSummary string, startTime time.Time) []ParsedDayPlan {
-	var plans []ParsedDayPlan
-	
-	// Manuel olarak bilinen lokasyonları çıkar
-	locations := []string{
-		"Ayvalık",
-		"Ayvalık", // 2. gün de Ayvalık
-		"Foça",
-		"Foça", // 4. gün de Foça
-		"Kuşadası",
-		"Kuşadası", // 6. gün de Kuşadası
-		"Akyaka (Gökova)",
-		"Muğla",
-	}
-	
-	for i, location := range locations {
-		if i >= 8 { // Maksimum 8 gün
-			break
-		}
-		
-		dayDate := startTime.AddDate(0, 0, i).Format("2006-01-02")
-		plans = append(plans, ParsedDayPlan{
-			Day:      i + 1,
-			Date:     dayDate,
-			Location: location,
-			Details:  fmt.Sprintf("Gün %d: %s'ta konaklama ve keşif", i+1, location),
-			Notes:    fmt.Sprintf("AI tarafından önerilen %s bölgesi", location),
-		})
-	}
-	
-	return plans
-}
-
+// gRPC response'u frontend modelına çevir
 func convertGRPCResponseToModel(grpcResp *proto.TripPlanResponse) map[string]interface{} {
 	if grpcResp == nil {
+		log.Printf("⚠️ gRPC response boş")
 		return map[string]interface{}{"error": "Empty response from AI service"}
 	}
 
@@ -275,12 +96,15 @@ func convertGRPCResponseToModel(grpcResp *proto.TripPlanResponse) map[string]int
 			"total_days":     grpcResp.Trip.TotalDays,
 			"route_summary":  grpcResp.Trip.RouteSummary,
 		}
+		log.Printf("📋 Trip data hazırlandı")
+	} else {
+		log.Printf("⚠️ Trip data boş")
 	}
 
 	var locations []map[string]interface{}
 	log.Printf("🔄 Converting %d daily plans", len(grpcResp.DailyPlan))
-	
-	for i, dailyPlan := range grpcResp.DailyPlan {
+
+	for _, dailyPlan := range grpcResp.DailyPlan {
 		location := map[string]interface{}{
 			"day":  dailyPlan.Day,
 			"date": dailyPlan.Date,
@@ -293,38 +117,52 @@ func convertGRPCResponseToModel(grpcResp *proto.TripPlanResponse) map[string]int
 			location["latitude"] = dailyPlan.Location.Latitude
 			location["longitude"] = dailyPlan.Location.Longitude
 			location["notes"] = dailyPlan.Location.Notes
+			
+			log.Printf("✅ Day %d processed: %s (%f, %f)", 
+				dailyPlan.Day, 
+				dailyPlan.Location.Name,
+				dailyPlan.Location.Latitude,
+				dailyPlan.Location.Longitude)
+		} else {
+			log.Printf("⚠️ Day %d location boş", dailyPlan.Day)
 		}
 
 		locations = append(locations, location)
-		log.Printf("✅ Processed day %d: %s", i+1, location["name"])
 	}
 
-	return map[string]interface{}{
+	result := map[string]interface{}{
 		"trip":       tripData,
 		"daily_plan": locations,
 		"debug_info": map[string]interface{}{
-			"total_daily_plans": len(grpcResp.DailyPlan),
-			"has_trip_data":     grpcResp.Trip != nil,
-			"parsed_from_text":  len(grpcResp.DailyPlan) > 0,
+			"total_daily_plans":     len(grpcResp.DailyPlan),
+			"has_trip_data":         grpcResp.Trip != nil,
+			"grpc_response_success": true,
 		},
 	}
+
+	log.Printf("🎯 Final conversion complete - %d locations", len(locations))
+	return result
 }
 
-// Diğer handler metodları aynı...
 func (h *TripHandler) SaveTripHandler(c *fiber.Ctx) error {
 	var trip models.TripWithLocations
 
 	if err := c.BodyParser(&trip); err != nil {
+		log.Printf("❌ Save trip body parse hatası: %v", err)
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid request body"})
 	}
+
+	log.Printf("💾 Saving trip: %s with %d locations", trip.Trip.Name, len(trip.Locations))
 
 	tripService := service.NewTripService(&trip.Trip, h.DB, trip.Locations)
 
 	err := tripService.SaveTripWLocations(context.Background())
 	if err != nil {
+		log.Printf("❌ Trip save hatası: %v", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to save trip"})
 	}
 
+	log.Printf("✅ Trip başarıyla kaydedildi")
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{"status": "trip saved successfully"})
 }
 
@@ -334,12 +172,16 @@ func (h *TripHandler) GetUserTripsHandler(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "user_id is required"})
 	}
 
+	log.Printf("📖 Getting trips for user: %s", userID)
+
 	tripService := service.NewTripService(nil, h.DB, nil)
 	trips, err := tripService.GetUserTrips(context.Background(), userID)
 	if err != nil {
+		log.Printf("❌ Get user trips hatası: %v", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to get trips"})
 	}
 
+	log.Printf("✅ %d trip bulundu", len(trips))
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{"trips": trips})
 }
 
@@ -350,12 +192,16 @@ func (h *TripHandler) DeleteTripHandler(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid trip id"})
 	}
 
+	log.Printf("🗑️ Deleting trip: %d", tripID)
+
 	tripService := service.NewTripService(nil, h.DB, nil)
 	err = tripService.DeleteTrip(context.Background(), int32(tripID))
 	if err != nil {
+		log.Printf("❌ Delete trip hatası: %v", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to delete trip"})
 	}
 
+	log.Printf("✅ Trip silindi: %d", tripID)
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{"status": "trip deleted successfully"})
 }
 
@@ -366,11 +212,15 @@ func (h *TripHandler) GetTripByIDHandler(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "invalid trip id"})
 	}
 
+	log.Printf("📖 Getting trip by ID: %d", tripID)
+
 	tripService := service.NewTripService(nil, h.DB, nil)
 	trip, err := tripService.GetTripByID(context.Background(), int32(tripID))
 	if err != nil {
+		log.Printf("❌ Get trip by ID hatası: %v", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "failed to get trip"})
 	}
 
+	log.Printf("✅ Trip bulundu: %s", trip.Trip.Name)
 	return c.Status(fiber.StatusOK).JSON(trip)
 }
