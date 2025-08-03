@@ -94,7 +94,6 @@ func convertGRPCResponseToModel(grpcResp *proto.TripPlanResponse) map[string]int
 			"start_date":     grpcResp.Trip.StartDate,
 			"end_date":       grpcResp.Trip.EndDate,
 			"total_days":     grpcResp.Trip.TotalDays,
-			"route_summary":  grpcResp.Trip.RouteSummary,
 		}
 		log.Printf("📋 Trip data hazırlandı")
 	} else {
