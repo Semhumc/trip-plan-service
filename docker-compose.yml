@@ -1,3 +1,5 @@
+# docker-compose.yml
+
 services:
   trip-plan-service:
     build:
@@ -5,21 +7,18 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     ports:
-      - ${PORT}:${PORT}
-    environment:
-      APP_ENV: ${APP_ENV}
-      PORT: ${PORT}
-      DB_HOST: ${DB_HOST}
-      DB_PORT: ${DB_PORT}
-      DB_DATABASE: ${DB_DATABASE}
-      DB_USERNAME: ${DB_USERNAME}
-      DB_PASSWORD: ${DB_PASSWORD}
-      DB_SCHEMA: ${DB_SCHEMA}
+      - "${PORT}:${PORT}"
+    env_file: # <-- EN ÖNEMLİ KISIM! .env dosyasını container'a yükler.
+      - .env
     depends_on:
       trip-location-service-psql:
         condition: service_healthy
     networks:
       - trip-service-network
+    # AI_SERVICE_ADDR'nin çalışması için bu satır gereklidir.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
   trip-location-service-psql:
     image: postgres:latest
     restart: unless-stopped
@@ -28,6 +27,7 @@ services:
       POSTGRES_USER: ${DB_USERNAME}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
+      # Bilgisayarınızın 7000 portunu container'ın 5432'sine bağlar
       - "${DB_PORT_EXT}:5432"
     volumes:
       - trip-location-service-psql_volume:/var/lib/postgresql/data
@@ -39,6 +39,7 @@ services:
       start_period: 15s
     networks:
       - trip-service-network
+
   pgadmin:
     image: dpage/pgadmin4:latest
     restart: unless-stopped
@@ -57,5 +58,6 @@ services:
 volumes:
   trip-location-service-psql_volume:
   trip-location-pgadmin-data:
+
 networks:
   trip-service-network:

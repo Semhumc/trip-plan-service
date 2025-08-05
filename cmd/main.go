@@ -1,3 +1,5 @@
+// main.go
+
 package main
 
 import (
@@ -15,31 +17,28 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 )
 
-var (
-	user            = os.Getenv("DB_USERNAME")
-	password        = os.Getenv("DB_PASSWORD")
-	dbname          = os.Getenv("DB_DATABASE")
-	host            = os.Getenv("DB_HOST")
-	port            = os.Getenv("DB_PORT")
-	//aiServiceAddr   = os.Getenv("AI_SERVICE_ADDR") // e.g., "localhost:50051"
-	tripServicePort = os.Getenv("TRIP_SERVICE_PORT")
-
-	aiServiceAddr = "localhost:50051"
-)
-
 func main() {
+	// Değişkenler artık .env dosyasından env_file ile container'a doğru şekilde aktarılacak
+	user := os.Getenv("DB_USERNAME")
+	password := os.Getenv("DB_PASSWORD")
+	dbname := os.Getenv("DB_DATABASE")
+	host := os.Getenv("DB_HOST") // Değeri: "trip-location-service-psql"
+	port := os.Getenv("DB_PORT") // Değeri: "5432"
+	appPort := os.Getenv("PORT") // Değeri: "8085"
+	aiServiceAddr := os.Getenv("AI_SERVICE_ADDR")
+
 	app := fiber.New()
 
-	// ✅ CORS Middleware
 	app.Use(cors.New(cors.Config{
-        AllowOrigins: "http://localhost:3000", // frontend adresin
-        AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
-        AllowHeaders: "Origin, Content-Type, Accept, Authorization",
-        AllowCredentials: true,
-    }))
+		AllowOrigins:     "http://localhost:3000",
+		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
+		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
+		AllowCredentials: true,
+	}))
 
-	dburl := fmt.Sprintf("user=%s password=%s dbname=%s host=%s port=%s sslmode=disable",
-		user, password, dbname, host, port)
+	// Bağlantı dizesi artık doğru değerlerle oluşturulacak
+	dburl := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		user, password, host, port, dbname)
 
 	db, err := sql.Open("postgres", dburl)
 	if err != nil {
@@ -47,24 +46,27 @@ func main() {
 	}
 	defer db.Close()
 
+	// Bağlantıyı doğrulamak için ping atın
+	if err = db.Ping(); err != nil {
+		log.Fatalf("Veritabanına ping atılamadı: %v", err)
+	}
+	log.Println("Veritabanı bağlantısı başarıyla sağlandı!")
+
 	aiClient, err := client.NewAIClient(aiServiceAddr)
 	if err != nil {
-		log.Fatalf("Failed to create AI client: %v", err)
+		log.Fatalf("AI istemcisi oluşturulamadı: %v", err)
 	}
 	defer aiClient.Close()
 
 	tripHandler := handler.NewTripHandler(db, aiClient)
-
 	routes.TripRoutes(app, tripHandler)
 
-	// ✅ Dinlenecek port .env'den alınabilir
-	if tripServicePort == "" {
-		tripServicePort = "8000"
+	if appPort == "" {
+		appPort = "8085" // Ortam değişkeni yoksa varsayılan port
 	}
-	err = app.Listen(":" + tripServicePort)
-	if err != nil {
+
+	log.Printf("Sunucu :%s portunda dinleniyor...", appPort)
+	if err := app.Listen(":" + appPort); err != nil {
 		log.Fatalf("Sunucu başlatılamadı: %v", err)
 	}
 }
-
-
