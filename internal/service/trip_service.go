@@ -1,10 +1,10 @@
-// internal/service/trip_service.go - Eksik metodların eklenmesi
-
 package service
 
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"strconv"
 	"time"
 	db "trip-plan-service/internal/db/postgresql"
 	"trip-plan-service/internal/models"
@@ -31,12 +31,22 @@ func (s *TripService) SaveTripWLocations(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Hata durumunda Rollback'i garantilemek için defer kullanın.
+	defer tx.Rollback()
 
 	qtx := s.Queries.WithTx(tx)
 
-	trip, err := qtx.Create_Trip(ctx, db.Create_TripParams{
-		UserID:      s.TripSer.UserID,
-		Name:        s.TripSer.Name,
+	trip, err := qtx.CreateTrip(ctx, db.CreateTripParams{
+		UserID: s.TripSer.UserID,
+		Name:   s.TripSer.Name,
+		StartPosition: sql.NullString{
+			String: s.TripSer.StartPosition,
+			Valid:  s.TripSer.StartPosition != "",
+		},
+		EndPosition: sql.NullString{
+			String: s.TripSer.EndPosition,
+			Valid:  s.TripSer.EndPosition != "",
+		},
 		Description: sql.NullString{
 			String: s.TripSer.Description,
 			Valid:  s.TripSer.Description != "",
@@ -52,12 +62,11 @@ func (s *TripService) SaveTripWLocations(ctx context.Context) error {
 	})
 
 	if err != nil {
-		tx.Rollback()
-		return err
+		return err // Rollback defer ile yapılacak
 	}
 
 	for i, loc := range s.Locations {
-		location, err := qtx.Create_Location(ctx, db.Create_LocationParams{
+		location, err := qtx.CreateLocation(ctx, db.CreateLocationParams{
 			Name: loc.Name,
 			Address: sql.NullString{
 				String: func() string {
@@ -67,6 +76,15 @@ func (s *TripService) SaveTripWLocations(ctx context.Context) error {
 					return ""
 				}(),
 				Valid: loc.Address != nil && *loc.Address != "",
+			},
+			Latitude: sql.NullString{
+				String: fmt.Sprintf("%f", loc.Latitude),
+				Valid:  true,
+			},
+			// EKLENDİ: Eksik olan Longitude parametresi eklendi.
+			Longitude: sql.NullString{
+				String: fmt.Sprintf("%f", loc.Longitude),
+				Valid:  true,
 			},
 			SiteUrl: sql.NullString{
 				String: func() string {
@@ -88,24 +106,24 @@ func (s *TripService) SaveTripWLocations(ctx context.Context) error {
 			},
 		})
 		if err != nil {
-			tx.Rollback()
-			return err
+			return err // Rollback defer ile yapılacak
 		}
 
-		err = qtx.Create_Trip_Location(ctx, db.Create_Trip_LocationParams{
-			TripID:     int32(trip.ID),
-			LocationID: int32(location.ID),
+		// DÜZELTİLDİ: Fonksiyon adı `CreateTripLocation`'dan `AddLocationToTrip`'e çevrildi.
+		err = qtx.AddLocationToTrip(ctx, db.AddLocationToTripParams{
+			TripID:     trip.ID,
+			LocationID: location.ID,
 			Position:   int32(i + 1),
 		})
 		if err != nil {
-			tx.Rollback()
-			return err
+			return err // Rollback defer ile yapılacak
 		}
 	}
+
+	// Her şey başarılıysa Commit et
 	return tx.Commit()
 }
 
-// YENİ: Kullanıcının tüm triplerini getir
 func (s *TripService) GetUserTrips(ctx context.Context, userID string) ([]models.TripWithLocations, error) {
 	trips, err := s.Queries.ListTripsByUserID(ctx, userID)
 	if err != nil {
@@ -114,17 +132,34 @@ func (s *TripService) GetUserTrips(ctx context.Context, userID string) ([]models
 
 	var result []models.TripWithLocations
 	for _, trip := range trips {
-		// Her trip için location'ları getir
-		locations, err := s.Queries.GetTripLocations(ctx, trip.ID)
+		locationsDB, err := s.Queries.GetTripLocations(ctx, trip.ID)
 		if err != nil {
 			return nil, err
 		}
 
 		var tripLocations []models.Location
-		for _, loc := range locations {
+		for _, loc := range locationsDB {
 			tripLocation := models.Location{
 				ID:   int(loc.ID),
 				Name: loc.Name,
+				Latitude: func() float64 {
+					if loc.Latitude.Valid {
+						val, err := strconv.ParseFloat(loc.Latitude.String, 64)
+						if err == nil {
+							return val
+						}
+					}
+					return 0
+				}(),
+				Longitude: func() float64 {
+					if loc.Longitude.Valid {
+						val, err := strconv.ParseFloat(loc.Longitude.String, 64)
+						if err == nil {
+							return val
+						}
+					}
+					return 0
+				}(),
 				Address: func() *string {
 					if loc.Address.Valid {
 						return &loc.Address.String
@@ -143,53 +178,24 @@ func (s *TripService) GetUserTrips(ctx context.Context, userID string) ([]models
 					}
 					return nil
 				}(),
-				CreatedAt: func() time.Time {
-					if loc.CreatedAt.Valid {
-						return loc.CreatedAt.Time
-					}
-					return time.Time{}
-				}(),
+				CreatedAt: loc.CreatedAt.Time,
 			}
 			tripLocations = append(tripLocations, tripLocation)
 		}
 
 		tripWithLoc := models.TripWithLocations{
 			Trip: models.Trip{
-				ID:          int(trip.ID),
-				UserID:      trip.UserID,
-				Name:        trip.Name,
-				Description: func() string {
-					if trip.Description.Valid {
-						return trip.Description.String
-					}
-					return ""
-				}(),
-				StartDate: trip.StartDate.String(),
-				EndDate:   trip.EndDate.String(),
-				CreatedAt: func() time.Time {
-					if trip.CreatedAt.Valid {
-						return trip.CreatedAt.Time
-					}
-					return time.Time{}
-				}(),
-				UpdatedAt: func() time.Time {
-					if trip.UpdatedAt.Valid {
-						return trip.UpdatedAt.Time
-					}
-					return time.Time{}
-				}(),
-				StartPosition: func() string {
-					if trip.StartPosition.Valid {
-						return trip.StartPosition.String
-					}
-					return ""
-				}(),
-				EndPosition: func() string {
-					if trip.FinishPosition.Valid {
-						return trip.FinishPosition.String
-					}
-					return ""
-				}(),
+				ID:            int(trip.ID),
+				UserID:        trip.UserID,
+				Name:          trip.Name,
+				Description:   trip.Description.String,
+				StartDate:     trip.StartDate.Format("2006-01-02"),
+				EndDate:       trip.EndDate.Format("2006-01-02"),
+				CreatedAt:     trip.CreatedAt.Time,
+				UpdatedAt:     trip.UpdatedAt.Time,
+				StartPosition: trip.StartPosition.String,
+				// DÜZELTİLDİ: SQLC artık EndPosition olarak üretecek
+				EndPosition: trip.EndPosition.String,
 			},
 			Locations: tripLocations,
 		}
@@ -199,28 +205,44 @@ func (s *TripService) GetUserTrips(ctx context.Context, userID string) ([]models
 	return result, nil
 }
 
-// YENİ: Trip sil
 func (s *TripService) DeleteTrip(ctx context.Context, tripID int32) error {
 	return s.Queries.DeleteTrip(ctx, tripID)
 }
 
-// YENİ: ID'ye göre trip getir
 func (s *TripService) GetTripByID(ctx context.Context, tripID int32) (*models.TripWithLocations, error) {
 	trip, err := s.Queries.GetTripByID(ctx, tripID)
 	if err != nil {
 		return nil, err
 	}
 
-	locations, err := s.Queries.GetTripLocations(ctx, tripID)
+	locationsDB, err := s.Queries.GetTripLocations(ctx, tripID)
 	if err != nil {
 		return nil, err
 	}
 
 	var tripLocations []models.Location
-	for _, loc := range locations {
+	for _, loc := range locationsDB {
 		tripLocation := models.Location{
 			ID:   int(loc.ID),
 			Name: loc.Name,
+			Latitude: func() float64 {
+				if loc.Latitude.Valid {
+					val, err := strconv.ParseFloat(loc.Latitude.String, 64)
+					if err == nil {
+						return val
+					}
+				}
+				return 0
+			}(),
+			Longitude: func() float64 {
+				if loc.Longitude.Valid {
+					val, err := strconv.ParseFloat(loc.Longitude.String, 64)
+					if err == nil {
+						return val
+					}
+				}
+				return 0
+			}(),
 			Address: func() *string {
 				if loc.Address.Valid {
 					return &loc.Address.String
@@ -239,59 +261,27 @@ func (s *TripService) GetTripByID(ctx context.Context, tripID int32) (*models.Tr
 				}
 				return nil
 			}(),
-			CreatedAt: func() time.Time {
-				if loc.CreatedAt.Valid {
-					return loc.CreatedAt.Time
-				}
-				return time.Time{}
-			}(),
+			CreatedAt: loc.CreatedAt.Time,
 		}
 		tripLocations = append(tripLocations, tripLocation)
 	}
 
 	result := &models.TripWithLocations{
 		Trip: models.Trip{
-			ID:          int(trip.ID),
-			UserID:      trip.UserID,
-			Name:        trip.Name,
-			Description: func() string {
-				if trip.Description.Valid {
-					return trip.Description.String
-				}
-				return ""
-			}(),
-			StartDate: trip.StartDate.String(),
-			EndDate:   trip.EndDate.String(),
-			CreatedAt: func() time.Time {
-				if trip.CreatedAt.Valid {
-					return trip.CreatedAt.Time
-				}
-				return time.Time{}
-			}(),
-			UpdatedAt: func() time.Time {
-				if trip.UpdatedAt.Valid {
-					return trip.UpdatedAt.Time
-				}
-				return time.Time{}
-			}(),
-			StartPosition: func() string {
-				if trip.StartPosition.Valid {
-					return trip.StartPosition.String
-				}
-				return ""
-			}(),
-			EndPosition: func() string {
-				if trip.FinishPosition.Valid {
-					return trip.FinishPosition.String
-				}
-				return ""
-			}(),
+			ID:            int(trip.ID),
+			UserID:        trip.UserID,
+			Name:          trip.Name,
+			Description:   trip.Description.String,
+			StartDate:     trip.StartDate.Format("2006-01-02"),
+			EndDate:       trip.EndDate.Format("2006-01-02"),
+			CreatedAt:     trip.CreatedAt.Time,
+			UpdatedAt:     trip.UpdatedAt.Time,
+			StartPosition: trip.StartPosition.String,
+			// DÜZELTİLDİ: SQLC artık EndPosition olarak üretecek
+			EndPosition: trip.EndPosition.String,
 		},
 		Locations: tripLocations,
 	}
 
 	return result, nil
 }
-
-
-// YENİ: Kullanıcının tüm triplerini getir

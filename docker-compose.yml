@@ -10,6 +10,8 @@ services:
       - "${PORT}:${PORT}"
     env_file: # <-- EN ÖNEMLİ KISIM! .env dosyasını container'a yükler.
       - .env
+    volumes: # <-- BU SATIRI VE ALTINDAKİNİ EKLEYİN
+      - .:/app
     depends_on:
       trip-location-service-psql:
         condition: service_healthy

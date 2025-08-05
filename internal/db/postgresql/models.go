@@ -31,6 +31,7 @@ type Trip struct {
 	UpdatedAt      sql.NullTime
 	StartPosition  sql.NullString
 	FinishPosition sql.NullString
+	EndPosition    sql.NullString
 }
 
 type TripLocation struct {

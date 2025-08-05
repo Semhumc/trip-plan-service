@@ -12,6 +12,7 @@ import (
 )
 
 const addLocationToTrip = `-- name: AddLocationToTrip :exec
+
 INSERT INTO trip_locations (trip_id, location_id, position)
 VALUES ($1, $2, $3)
 `
@@ -22,68 +23,107 @@ type AddLocationToTripParams struct {
 	Position   int32
 }
 
+// trip_locations.sql (İlişkisel Sorgular)
 func (q *Queries) AddLocationToTrip(ctx context.Context, arg AddLocationToTripParams) error {
 	_, err := q.db.ExecContext(ctx, addLocationToTrip, arg.TripID, arg.LocationID, arg.Position)
 	return err
 }
 
 const createLocation = `-- name: CreateLocation :one
-INSERT INTO locations (name, address, site_url, notes)
-VALUES ($1, $2, $3, $4)
-RETURNING id, name, address, site_url, notes, created_at, latitude, longitude
+
+INSERT INTO locations (name, address, site_url, notes, latitude, longitude)
+VALUES ($1, $2, $3, $4, $5, $6)
+RETURNING id, name, address, site_url, notes, latitude, longitude, created_at
 `
 
 type CreateLocationParams struct {
-	Name    string
-	Address sql.NullString
-	SiteUrl sql.NullString
-	Notes   sql.NullString
+	Name      string
+	Address   sql.NullString
+	SiteUrl   sql.NullString
+	Notes     sql.NullString
+	Latitude  sql.NullString
+	Longitude sql.NullString
 }
 
-func (q *Queries) CreateLocation(ctx context.Context, arg CreateLocationParams) (Location, error) {
+type CreateLocationRow struct {
+	ID        int32
+	Name      string
+	Address   sql.NullString
+	SiteUrl   sql.NullString
+	Notes     sql.NullString
+	Latitude  sql.NullString
+	Longitude sql.NullString
+	CreatedAt sql.NullTime
+}
+
+// locations.sql
+// GÜNCELLENDİ: latitude ve longitude eklendi. Parametre sayıları arttı ($4 -> $6).
+func (q *Queries) CreateLocation(ctx context.Context, arg CreateLocationParams) (CreateLocationRow, error) {
 	row := q.db.QueryRowContext(ctx, createLocation,
 		arg.Name,
 		arg.Address,
 		arg.SiteUrl,
 		arg.Notes,
+		arg.Latitude,
+		arg.Longitude,
 	)
-	var i Location
+	var i CreateLocationRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.Address,
 		&i.SiteUrl,
 		&i.Notes,
-		&i.CreatedAt,
 		&i.Latitude,
 		&i.Longitude,
+		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const createTrip = `-- name: CreateTrip :one
-INSERT INTO trips (user_id, name, description, start_date, end_date)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, user_id, name, description, start_date, end_date, created_at, updated_at, start_position, finish_position
+
+INSERT INTO trips (user_id, name, description, start_date, end_date, start_position, end_position)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, user_id, name, description, start_date, end_date, start_position, end_position, created_at, updated_at
 `
 
 type CreateTripParams struct {
-	UserID      string
-	Name        string
-	Description sql.NullString
-	StartDate   time.Time
-	EndDate     time.Time
+	UserID        string
+	Name          string
+	Description   sql.NullString
+	StartDate     time.Time
+	EndDate       time.Time
+	StartPosition sql.NullString
+	EndPosition   sql.NullString
 }
 
-func (q *Queries) CreateTrip(ctx context.Context, arg CreateTripParams) (Trip, error) {
+type CreateTripRow struct {
+	ID            int32
+	UserID        string
+	Name          string
+	Description   sql.NullString
+	StartDate     time.Time
+	EndDate       time.Time
+	StartPosition sql.NullString
+	EndPosition   sql.NullString
+	CreatedAt     sql.NullTime
+	UpdatedAt     sql.NullTime
+}
+
+// trips.sql
+// DÜZELTİLDİ: "finish_position" -> "end_position" olarak değiştirildi.
+func (q *Queries) CreateTrip(ctx context.Context, arg CreateTripParams) (CreateTripRow, error) {
 	row := q.db.QueryRowContext(ctx, createTrip,
 		arg.UserID,
 		arg.Name,
 		arg.Description,
 		arg.StartDate,
 		arg.EndDate,
+		arg.StartPosition,
+		arg.EndPosition,
 	)
-	var i Trip
+	var i CreateTripRow
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
@@ -91,116 +131,12 @@ func (q *Queries) CreateTrip(ctx context.Context, arg CreateTripParams) (Trip, e
 		&i.Description,
 		&i.StartDate,
 		&i.EndDate,
-		&i.CreatedAt,
-		&i.UpdatedAt,
 		&i.StartPosition,
-		&i.FinishPosition,
-	)
-	return i, err
-}
-
-const create_Location = `-- name: Create_Location :one
-INSERT INTO locations (name, address, site_url, notes)
-VALUES ($1, $2, $3, $4)
-RETURNING id, name, address, site_url, notes, created_at
-`
-
-type Create_LocationParams struct {
-	Name    string
-	Address sql.NullString
-	SiteUrl sql.NullString
-	Notes   sql.NullString
-}
-
-type Create_LocationRow struct {
-	ID        int32
-	Name      string
-	Address   sql.NullString
-	SiteUrl   sql.NullString
-	Notes     sql.NullString
-	CreatedAt sql.NullTime
-}
-
-func (q *Queries) Create_Location(ctx context.Context, arg Create_LocationParams) (Create_LocationRow, error) {
-	row := q.db.QueryRowContext(ctx, create_Location,
-		arg.Name,
-		arg.Address,
-		arg.SiteUrl,
-		arg.Notes,
-	)
-	var i Create_LocationRow
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Address,
-		&i.SiteUrl,
-		&i.Notes,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
-const create_Trip = `-- name: Create_Trip :one
-INSERT INTO trips (user_id, name, description, start_date, end_date)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, user_id, name, description, start_date, end_date, created_at, updated_at
-`
-
-type Create_TripParams struct {
-	UserID      string
-	Name        string
-	Description sql.NullString
-	StartDate   time.Time
-	EndDate     time.Time
-}
-
-type Create_TripRow struct {
-	ID          int32
-	UserID      string
-	Name        string
-	Description sql.NullString
-	StartDate   time.Time
-	EndDate     time.Time
-	CreatedAt   sql.NullTime
-	UpdatedAt   sql.NullTime
-}
-
-func (q *Queries) Create_Trip(ctx context.Context, arg Create_TripParams) (Create_TripRow, error) {
-	row := q.db.QueryRowContext(ctx, create_Trip,
-		arg.UserID,
-		arg.Name,
-		arg.Description,
-		arg.StartDate,
-		arg.EndDate,
-	)
-	var i Create_TripRow
-	err := row.Scan(
-		&i.ID,
-		&i.UserID,
-		&i.Name,
-		&i.Description,
-		&i.StartDate,
-		&i.EndDate,
+		&i.EndPosition,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const create_Trip_Location = `-- name: Create_Trip_Location :exec
-INSERT INTO trip_locations (trip_id, location_id, position)
-VALUES ($1, $2, $3)
-`
-
-type Create_Trip_LocationParams struct {
-	TripID     int32
-	LocationID int32
-	Position   int32
-}
-
-func (q *Queries) Create_Trip_Location(ctx context.Context, arg Create_Trip_LocationParams) error {
-	_, err := q.db.ExecContext(ctx, create_Trip_Location, arg.TripID, arg.LocationID, arg.Position)
-	return err
 }
 
 const deleteTrip = `-- name: DeleteTrip :exec
@@ -214,34 +150,62 @@ func (q *Queries) DeleteTrip(ctx context.Context, id int32) error {
 }
 
 const getLocationByID = `-- name: GetLocationByID :one
-SELECT id, name, address, site_url, notes, created_at, latitude, longitude FROM locations
+SELECT id, name, address, site_url, notes, latitude, longitude, created_at
+FROM locations
 WHERE id = $1
 `
 
-func (q *Queries) GetLocationByID(ctx context.Context, id int32) (Location, error) {
+type GetLocationByIDRow struct {
+	ID        int32
+	Name      string
+	Address   sql.NullString
+	SiteUrl   sql.NullString
+	Notes     sql.NullString
+	Latitude  sql.NullString
+	Longitude sql.NullString
+	CreatedAt sql.NullTime
+}
+
+// GÜNCELLENDİ: "*" yerine tüm kolonlar açıkça yazılarak yeni kolonlar eklendi.
+func (q *Queries) GetLocationByID(ctx context.Context, id int32) (GetLocationByIDRow, error) {
 	row := q.db.QueryRowContext(ctx, getLocationByID, id)
-	var i Location
+	var i GetLocationByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.Address,
 		&i.SiteUrl,
 		&i.Notes,
-		&i.CreatedAt,
 		&i.Latitude,
 		&i.Longitude,
+		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getTripByID = `-- name: GetTripByID :one
-SELECT id, user_id, name, description, start_date, end_date, created_at, updated_at, start_position, finish_position FROM trips
+SELECT id, user_id, name, description, start_date, end_date, start_position, end_position, created_at, updated_at
+FROM trips
 WHERE id = $1
 `
 
-func (q *Queries) GetTripByID(ctx context.Context, id int32) (Trip, error) {
+type GetTripByIDRow struct {
+	ID            int32
+	UserID        string
+	Name          string
+	Description   sql.NullString
+	StartDate     time.Time
+	EndDate       time.Time
+	StartPosition sql.NullString
+	EndPosition   sql.NullString
+	CreatedAt     sql.NullTime
+	UpdatedAt     sql.NullTime
+}
+
+// DÜZELTİLDİ: "finish_position" -> "end_position" olarak değiştirildi.
+func (q *Queries) GetTripByID(ctx context.Context, id int32) (GetTripByIDRow, error) {
 	row := q.db.QueryRowContext(ctx, getTripByID, id)
-	var i Trip
+	var i GetTripByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
@@ -249,16 +213,17 @@ func (q *Queries) GetTripByID(ctx context.Context, id int32) (Trip, error) {
 		&i.Description,
 		&i.StartDate,
 		&i.EndDate,
+		&i.StartPosition,
+		&i.EndPosition,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.StartPosition,
-		&i.FinishPosition,
 	)
 	return i, err
 }
 
 const getTripLocations = `-- name: GetTripLocations :many
-SELECT l.id, l.name, l.address, l.site_url, l.notes, l.created_at, l.latitude, l.longitude, tl.position FROM locations l
+SELECT l.id, l.name, l.address, l.site_url, l.notes, l.latitude, l.longitude, l.created_at, tl.position
+FROM locations l
 JOIN trip_locations tl ON l.id = tl.location_id
 WHERE tl.trip_id = $1
 ORDER BY tl.position
@@ -270,12 +235,13 @@ type GetTripLocationsRow struct {
 	Address   sql.NullString
 	SiteUrl   sql.NullString
 	Notes     sql.NullString
-	CreatedAt sql.NullTime
 	Latitude  sql.NullString
 	Longitude sql.NullString
+	CreatedAt sql.NullTime
 	Position  int32
 }
 
+// GÜNCELLENDİ: "l.*" yerine tüm location kolonları açıkça yazılarak yeni kolonlar eklendi.
 func (q *Queries) GetTripLocations(ctx context.Context, tripID int32) ([]GetTripLocationsRow, error) {
 	rows, err := q.db.QueryContext(ctx, getTripLocations, tripID)
 	if err != nil {
@@ -291,9 +257,9 @@ func (q *Queries) GetTripLocations(ctx context.Context, tripID int32) ([]GetTrip
 			&i.Address,
 			&i.SiteUrl,
 			&i.Notes,
-			&i.CreatedAt,
 			&i.Latitude,
 			&i.Longitude,
+			&i.CreatedAt,
 			&i.Position,
 		); err != nil {
 			return nil, err
@@ -310,28 +276,41 @@ func (q *Queries) GetTripLocations(ctx context.Context, tripID int32) ([]GetTrip
 }
 
 const listLocations = `-- name: ListLocations :many
-SELECT id, name, address, site_url, notes, created_at, latitude, longitude FROM locations
+SELECT id, name, address, site_url, notes, latitude, longitude, created_at
+FROM locations
 ORDER BY id
 `
 
-func (q *Queries) ListLocations(ctx context.Context) ([]Location, error) {
+type ListLocationsRow struct {
+	ID        int32
+	Name      string
+	Address   sql.NullString
+	SiteUrl   sql.NullString
+	Notes     sql.NullString
+	Latitude  sql.NullString
+	Longitude sql.NullString
+	CreatedAt sql.NullTime
+}
+
+// GÜNCELLENDİ: "*" yerine tüm kolonlar açıkça yazılarak yeni kolonlar eklendi.
+func (q *Queries) ListLocations(ctx context.Context) ([]ListLocationsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listLocations)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Location
+	var items []ListLocationsRow
 	for rows.Next() {
-		var i Location
+		var i ListLocationsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
 			&i.Address,
 			&i.SiteUrl,
 			&i.Notes,
-			&i.CreatedAt,
 			&i.Latitude,
 			&i.Longitude,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -347,20 +326,35 @@ func (q *Queries) ListLocations(ctx context.Context) ([]Location, error) {
 }
 
 const listTripsByUserID = `-- name: ListTripsByUserID :many
-SELECT id, user_id, name, description, start_date, end_date, created_at, updated_at, start_position, finish_position FROM trips
+SELECT id, user_id, name, description, start_date, end_date, start_position, end_position, created_at, updated_at
+FROM trips
 WHERE user_id = $1
 ORDER BY created_at DESC
 `
 
-func (q *Queries) ListTripsByUserID(ctx context.Context, userID string) ([]Trip, error) {
+type ListTripsByUserIDRow struct {
+	ID            int32
+	UserID        string
+	Name          string
+	Description   sql.NullString
+	StartDate     time.Time
+	EndDate       time.Time
+	StartPosition sql.NullString
+	EndPosition   sql.NullString
+	CreatedAt     sql.NullTime
+	UpdatedAt     sql.NullTime
+}
+
+// DÜZELTİLDİ: "finish_position" -> "end_position" olarak değiştirildi.
+func (q *Queries) ListTripsByUserID(ctx context.Context, userID string) ([]ListTripsByUserIDRow, error) {
 	rows, err := q.db.QueryContext(ctx, listTripsByUserID, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Trip
+	var items []ListTripsByUserIDRow
 	for rows.Next() {
-		var i Trip
+		var i ListTripsByUserIDRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,
@@ -368,10 +362,10 @@ func (q *Queries) ListTripsByUserID(ctx context.Context, userID string) ([]Trip,
 			&i.Description,
 			&i.StartDate,
 			&i.EndDate,
+			&i.StartPosition,
+			&i.EndPosition,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.StartPosition,
-			&i.FinishPosition,
 		); err != nil {
 			return nil, err
 		}
