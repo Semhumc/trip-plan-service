@@ -2,10 +2,12 @@ module trip-plan-service
 
 go 1.24.4
 
-require github.com/gofiber/fiber/v2 v2.52.9
+require (
+	github.com/gofiber/fiber/v2 v2.52.9
+	github.com/lib/pq v1.10.9
+)
 
 require (
-	github.com/lib/pq v1.10.9 // indirect
 	golang.org/x/net v0.40.0 // indirect
 	golang.org/x/text v0.25.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250528174236-200df99c418a // indirect
@@ -13,7 +15,7 @@ require (
 )
 
 require (
-	github.com/Semhumc/grpc-proto v0.0.0-20250731114011-96127a76e246
+	github.com/Semhumc/grpc-proto v0.0.0-20250809233321-11a565261c3d
 	github.com/andybalholm/brotli v1.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect

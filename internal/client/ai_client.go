@@ -34,9 +34,9 @@ func (c *AIClient) Close() error {
 	return c.conn.Close()
 }
 
-func (c *AIClient) GenerateTripPlan(ctx context.Context, req *proto.PromptRequest) (*proto.TripPlanResponse, error) {
+func (c *AIClient) GenerateTripPlan(ctx context.Context, req *proto.PromptRequest) (*proto.TripOptionsResponse, error) {
 	// Set timeout for the request
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 250*time.Second)
 	defer cancel()
 
 	response, err := c.client.GeneratePlan(ctx, req)

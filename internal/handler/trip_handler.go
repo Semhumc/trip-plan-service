@@ -67,80 +67,74 @@ func (h *TripHandler) NewCreateTripHandler(c *fiber.Ctx) error {
 		})
 	}
 
-	log.Printf("📥 gRPC Response alındı - Daily plans count: %d", len(response.DailyPlan))
+	log.Printf("📥 gRPC Response alındı - Daily plans count: %d", len(response.TripOptions))
 
 	// gRPC response'u frontend için uygun formata çevir
-	tripResponse := convertGRPCResponseToModel(response)
-	
+	tripResponse := convertTripOptionsToModel(response)
+
 	log.Printf("✅ Response hazırlandı: %+v", tripResponse)
 	return c.Status(fiber.StatusOK).JSON(tripResponse)
 }
 
 // gRPC response'u frontend modelına çevir
-func convertGRPCResponseToModel(grpcResp *proto.TripPlanResponse) map[string]interface{} {
+func convertTripOptionsToModel(grpcResp *proto.TripOptionsResponse) map[string]interface{} {
 	if grpcResp == nil {
-		log.Printf("⚠️ gRPC response boş")
 		return map[string]interface{}{"error": "Empty response from AI service"}
 	}
 
-	var tripData map[string]interface{}
-	if grpcResp.Trip != nil {
-		tripData = map[string]interface{}{
-			"user_id":        grpcResp.Trip.UserId,
-			"name":           grpcResp.Trip.Name,
-			"description":    grpcResp.Trip.Description,
-			"start_position": grpcResp.Trip.StartPosition,
-			"end_position":   grpcResp.Trip.EndPosition,
-			"start_date":     grpcResp.Trip.StartDate,
-			"end_date":       grpcResp.Trip.EndDate,
-			"total_days":     grpcResp.Trip.TotalDays,
-		}
-		log.Printf("📋 Trip data hazırlandı")
-	} else {
-		log.Printf("⚠️ Trip data boş")
-	}
+	var tripOptions []map[string]interface{}
 
-	var locations []map[string]interface{}
-	log.Printf("🔄 Converting %d daily plans", len(grpcResp.DailyPlan))
-
-	for _, dailyPlan := range grpcResp.DailyPlan {
-		location := map[string]interface{}{
-			"day":  dailyPlan.Day,
-			"date": dailyPlan.Date,
+	for _, option := range grpcResp.TripOptions {
+		// Trip data
+		var tripData map[string]interface{}
+		if option.Trip != nil {
+			tripData = map[string]interface{}{
+				"user_id":        option.Trip.UserId,
+				"name":           option.Trip.Name,
+				"description":    option.Trip.Description,
+				"start_position": option.Trip.StartPosition,
+				"end_position":   option.Trip.EndPosition,
+				"start_date":     option.Trip.StartDate,
+				"end_date":       option.Trip.EndDate,
+				"total_days":     option.Trip.TotalDays,
+			}
 		}
 
-		if dailyPlan.Location != nil {
-			location["name"] = dailyPlan.Location.Name
-			location["address"] = dailyPlan.Location.Address
-			location["site_url"] = dailyPlan.Location.SiteUrl
-			location["latitude"] = dailyPlan.Location.Latitude
-			location["longitude"] = dailyPlan.Location.Longitude
-			location["notes"] = dailyPlan.Location.Notes
-			
-			log.Printf("✅ Day %d processed: %s (%f, %f)", 
-				dailyPlan.Day, 
-				dailyPlan.Location.Name,
-				dailyPlan.Location.Latitude,
-				dailyPlan.Location.Longitude)
-		} else {
-			log.Printf("⚠️ Day %d location boş", dailyPlan.Day)
+		// Daily plans
+		var locations []map[string]interface{}
+		for _, dailyPlan := range option.DailyPlan {
+			location := map[string]interface{}{
+				"day":  dailyPlan.Day,
+				"date": dailyPlan.Date,
+			}
+
+			if dailyPlan.Location != nil {
+				location["name"] = dailyPlan.Location.Name
+				location["address"] = dailyPlan.Location.Address
+				location["site_url"] = dailyPlan.Location.SiteUrl
+				location["latitude"] = dailyPlan.Location.Latitude
+				location["longitude"] = dailyPlan.Location.Longitude
+				location["notes"] = dailyPlan.Location.Notes
+			}
+
+			locations = append(locations, location)
 		}
 
-		locations = append(locations, location)
+		// Option oluştur
+		tripOption := map[string]interface{}{
+			"theme":       option.Theme,
+			"description": option.Description,
+			"trip":        tripData,
+			"daily_plan":  locations,
+		}
+
+		tripOptions = append(tripOptions, tripOption)
 	}
 
-	result := map[string]interface{}{
-		"trip":       tripData,
-		"daily_plan": locations,
-		"debug_info": map[string]interface{}{
-			"total_daily_plans":     len(grpcResp.DailyPlan),
-			"has_trip_data":         grpcResp.Trip != nil,
-			"grpc_response_success": true,
-		},
+	return map[string]interface{}{
+		"trip_options":  tripOptions,
+		"total_options": len(tripOptions),
 	}
-
-	log.Printf("🎯 Final conversion complete - %d locations", len(locations))
-	return result
 }
 
 func (h *TripHandler) SaveTripHandler(c *fiber.Ctx) error {

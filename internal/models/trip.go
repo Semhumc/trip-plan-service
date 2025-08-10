@@ -9,8 +9,8 @@ type Trip struct {
 	StartPosition string    `json:"start_position"`
 	EndPosition   string    `json:"end_position"`
 	Description   string    `json:"description,omitempty"`
-	StartDate     string `json:"start_date"`
-	EndDate       string `json:"end_date"`
+	StartDate     string    `json:"start_date"`
+	EndDate       string    `json:"end_date"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }
@@ -20,8 +20,8 @@ type Location struct {
 	Name      string    `json:"name"`
 	Address   *string   `json:"address,omitempty"`
 	SiteURL   *string   `json:"site_url,omitempty"`
-	Latitude  float64   `json:"latitude"`   // enlem
-    Longitude float64   `json:"longitude"`  // boylam
+	Latitude  float64   `json:"latitude"`  // enlem
+	Longitude float64   `json:"longitude"` // boylam
 	Notes     *string   `json:"notes,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -35,4 +35,17 @@ type TripLocation struct {
 type TripWithLocations struct {
 	Trip      Trip       `json:"trip"`
 	Locations []Location `json:"locations"`
+}
+
+// Yeni model ekle:
+type TripOption struct {
+	Theme       string     `json:"theme"`
+	Description string     `json:"description"`
+	Trip        Trip       `json:"trip"`
+	DailyPlan   []Location `json:"daily_plan"`
+}
+
+type TripOptionsResponse struct {
+	TripOptions  []TripOption `json:"trip_options"`
+	TotalOptions int          `json:"total_options"`
 }
